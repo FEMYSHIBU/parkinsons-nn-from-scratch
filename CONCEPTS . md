@@ -1,0 +1,110 @@
+
+CONCEPTS
+---------------------------------------------
+1. Why a Neural Network Is Written as a Class
+A neural network needs to hold two things together: state(its weights and biases, which must persist and get updated over time) and behaviour(the steps that turn an input into a prediction). Object-oriented programming is a natural fit for this,because a class bundles data and the functions that act on that data into one unit.
+The class is the blueprint: it describes what any model of this type will have (weight matrices, a bias) and what it can do (make a prediction, learn fromdata).
+An object is one actual model you’ve built from that blueprint, with its own specific weight values.
+The constructor is a special part of the blueprint that runs automatically the moment a new object is created — this is where a model’s starting weights getset up.
+Inside the class, “this particular object” is referred to with a reserved word,used any time the code needs to read or change something belonging to that object specifically.
+A method defined inside a class only becomes usable once an object exists —you reach it through the object, never by its bare name alone. This is what allows the same blueprint to correctly serve many different objects, each working with its own data.
+
+2. Representing Data: Tensors and Shape
+All the data flowing through a network — inputs, weights, predictions — is stored as numeric containers with a fixed number of dimensions, informally called tensors or arrays. A single number, a list of numbers, and a table of numbers are all examples,differing only in how many dimensions they have. The one property worth checking constantly is shape — how many values exist along each dimension. Almost every bug in a from-scratch network traces back to two pieces of data having shapes that don’t line up the way the underlying maths expects.
+
+3. Weight Initialization and Symmetry Breaking
+Before a network can learn anything, its weights need starting values. These are chosen randomly, not set to a fixed number like zero, for a specific reason.
+The problem it solves: imagine a hidden layer with several neurons, all receiving the exact same inputs. If every neuron in that layer started with identical weights:
+During the forward pass, every neuron computes the exact same weighted sum, and therefore the exact same output.
+During backpropagation, since every neuron produced an identical output,every neuron also receives an identical gradient.
+Every neuron’s weights get updated by the exact same amount, in the exact same direction.
+The result: no matter how many training iterations run, those neurons remain permanently identical to each other. Effectively there is only one useful neuron, duplicated several times, rather than several neurons each specializing in detecting something different — wasting most of the network’s intended capacity.
+Why random initialization fixes it: giving each neuron different starting weights means each one computes a slightly different output from the same input, right from the first forward pass. That difference means each neuron also receives a slightly different gradient during backpropagation, so their weights evolve differently over training— allowing each neuron to gradually specialise, learning to respond to a different pattern in the data. This process is called symmetry breaking. 
+It’s why initialization needs to be random (and ideally centered around 0, to avoid pushing every neuron toward one extreme from the start) — not just about giving the model a starting point, but about ensuring its different neurons have the opportunity to become different from each other at all.
+Why biases don’t need the same treatment:biases are typically initialized at exactly zero, with no randomness. This is safe specifically because the weights are already random — the asymmetry needed for different neurons to diverge during training is already provided by the weights alone.
+Because “random” numbers on a computer are actually produced by a repeatable formula, fixing a starting point for that formula (a seed) makes the randomness reproducible — useful for debugging and for anyone else re-running the same code and expectingthe same result.
+
+4. The Forward Pass
+The forward pass is how input data turns into a prediction. At each layer, two things happen in sequence:
+1. Every incoming value is multiplied by its corresponding weight, these products are summed, and a bias is added — producing what’s called the pre-activation value.
+2. That pre-activation value is passed through an activation function, producing the layer’s actual output.
+The activation function is what gives a network the ability to learn relationships more complex than a straight line — without it, stacking multiple layers would mathematically collapse into being no more powerful than a single layer.
+
+4a. Activation Functions in Depth
+Every activation function exists to serve one or more of these roles:
+1. Introduce non-linearity. Without this, depth is wasted, and a network can only ever represent straight-line relationships, regardless of how many layers it has. If every layer used only linear activation, stacking layers would be pointless — mathematically, a chain of linear functions collapses into just one linearfunction.
+2. Control the output range, when useful. Different activation functions have different ranges, chosen to match what the output is supposed to represent.
+3. Decide which neurons “fire.” Biologically inspired: a real neuron doesn’t respond proportionally to everything — it has a threshold-like response. Activation functions give artificial neurons a similar notion of being “active” or “inactive” for a given input.
+4. Shape how gradients flow during training. Different activation functions have very different derivative behaviour, which directly affects how easily a network learns.
+
+Linear activation
+“Linear activation” means no activation function is applied at all — the pre-activation value passes straight through, unchanged (A = Z). Technically, “linear” refers to any function of the form f(x) = x (or f(x) = cx, a simple scaling) — a straight-line relationship between input and output, with no bending or squashing.
+Linear activation is used on a regression output layer, where the target can be any real number, since squashing functions would make it mathematically impossible to predict values outside their fixed range. It is essentially never used in hidden layers, for the non-linearity reason given above.
+
+Sigmoid
+sigmoid(x) = 1 / (1 + e^(-x))
+Squashes any input into (0, 1). Historically popular, still used for binary classification outputs (interpreted as a probability) and occasionally in gated architectures (like LSTMs). 
+Its main weakness: the derivative shrinks toward 0 as the input moves away from 0 in either direction — the direct cause of the vanishing gradient problem (see below).
+
+ReLU (Rectified Linear Unit)
+ReLU(x) = max(0, x)
+Outputs the input directly if positive, otherwise outputs exactly 0. Today’s default choice for hidden layers, because:
+Its derivative is either exactly 1 (for positive inputs) or exactly 0 (for negative inputs) — never a small fraction, so it doesn’t shrink gradients the way sigmoid does.
+It’s computationally very cheap (just a comparison, no exponentials).
+It tends to produce sparse activity — many neurons output exactly 0 for agiven input, which can act as a useful simplifying effect.
+Its own weakness: a neuron whose input is always negative gets a permanent derivative of 0, and can stop learning entirely — sometimes called the “dying ReLU” problem.Variants like Leaky ReLU address this.
+
+Tanh
+tanh(x) = (e^x - e^(-x)) / (e^x + e^(-x))
+Similar shape to sigmoid, but squashes to (-1, 1) instead of (0, 1), centred at 0. Often performs better than sigmoid in hidden layers for that reason, though it still suffers from the same saturation/vanishing-gradient weakness at its extremes.
+
+Softmax
+Used in the output layer of multi-class classification — when a model must choose among more than two mutually exclusive categories. It takes a layer’s raw output values(one number per possible class, called logits) and converts them into a probability distribution: values that are all between 0 and 1, and that sum to exactly 1 across all classes.
+softmax(z_i) = e^(z_i) / Σ e^(z_j) (sum over all output classes j)
+In words: take each class’s raw score, exponentiate it, then divide by the total of all the exponentiated scores. This forces every output to be positive, and forces them all to add up to 1 — exactly what’s needed to interpret the outputs as “the probability this input belongs to each class.” Exponentiating serves two purposes: it guarantees positivity (since raw scores can be negative, but e^x is always positive), and it exaggerates differences, so the class with the highest raw score ends up with a disproportionately higher probability, producing a more confident, decisive distribution.
+A useful way to remember the distinction: sigmoid handles “yes or no” on each output independently; softmax handles “which one of these mutually exclusive options” across all outputs together, since every softmax output depends on every other output’s raw score (they all share the same denominator). Softmax is typically paired with categorical cross-entropy loss.
+
+5. Regression vs. Classification — One Architecture,Different Endings
+The same hidden-layer structure can be used for predicting a continuous number (regression) or a category (classification). What changes is only the output layer:
+For regression, the output is typically left with no activation function, so it can represent any real number, since the target itself isn’t confined to a fixed range.
+For classification, the output typically passes through an activation function that compresses it into a valid probability range, since the goal is to express confidence in each possible category.
+The loss function used during training is chosen to match: mean squared error for regression, cross-entropy for classification.
+
+6. Measuring How Wrong the Model Is: The Loss Function
+A loss function condenses “how wrong is this prediction” into a single number the network can try to minimise. For regression, the most common choice squares the difference between each prediction and its true value, then averages that across all training examples.
+Squaring ensures errors in either direction count as equally bad, and penalises large errors proportionally more than small ones.
+
+7. Learning: Gradient Descent
+Gradient descent is the algorithm that actually improves a network’s weights overtime.
+For every weight, it calculates a gradient — a value representing how much the loss would change if that weight were nudged slightly, and in which direction. Each weight is then updated a small step in the direction that reduces the loss, with the step size controlled by a setting called the learning rate.
+A learning rate that’s too large can cause training to overshoot and become unstable;one too small can make learning painfully slow, or get stuck without improving much at all.
+
+8. Backpropagation: Computing Gradients Efficiently
+A network’s loss depends on every weight, but weights closer to the input affect the loss only indirectly, through everything downstream of them. Computing each of these effects from scratch would be extremely wasteful.
+Backpropagation solves this by applying the chain rule, working backward from the output layer to the input layer,reusing a quantity called the error signal (or delta) at each layer rather than recalculating everything from zero.
+A useful way to think about it: each layer’s gradient calculation looks structurally identical to a simple regression’s gradient — using whatever came out of the previous layer as its “input,” and whatever error signal flowed back from the next layer as its“target mismatch.” 
+The complexity of a deep network is really just this same simple calculation, repeated and chained across layers.
+When a hidden neuron feeds into more than one neuron in the next layer, its error signal is the combination (sum) of the error contributions flowing back from every one of those downstream connections.
+
+9. A Known Failure Mode: Vanishing Gradients
+The core mechanism: backpropagation computes each layer’s error signal by multiplying together the error flowing back from the next layer and the local activation function’s derivative at that point.
+Stacking many layers means many of these derivative terms get multiplied together in a chain. If each term is a fraction less than 1 — which is exactly what happens with sigmoid whenever a neuron’s output sits near 0 or 1 —multiplying many of them together produces a number that shrinks rapidly, layer by layer, the further back you go.
+sigmoid_derivative(x) = x × (1 - x)
+This reaches its maximum value of 0.25 only when x = 0.5, and gets smaller the closer x is to 0 or 1 — at the extremes, it approaches 0. A neuron whose output sits close to these extremes is described as saturated.
+Why this breaks training:
+if a hidden neuron’s gradient is multiplied by something close to 0, the resulting update to its weights is also close to 0 — effectively, that weight stops learning, no matter how many more training iterations run.
+In a deep network, this compounds: the very first layers (furthest from the output, where the error signal has to travel back through the most layers) can end up receiving gradients so small they’re essentially frozen at their random initial values.
+This is a well-documented limitation of sigmoid in hidden layers, and a major reason ReLU became the standard choice for hidden layers in modern practice: ReLU’sderivative is either exactly 1 or exactly 0 — never a small fraction in between — so for the neurons where it’s 1, the gradient passes through completely unchanged, with no shrinking, allowing gradients to flow much more reliably through many stacked layers.
+
+10. Data Handling Concepts That Protect a Model’s Credibility
+Splitting data into training and test portions, and never letting the test portion influence any decision made during training (including feature scaling), is what makes a model’s reported performance trustworthy as a measure of how it would do on genuinely new data.
+When a dataset contains repeated records from the same individual, a plain random split can accidentally let information about that individual leak between training and testing — a more careful, group-aware split prevents this.
+Rescaling input features so they’re on comparable scales prevents any single feature from dominating purely because of its numeric magnitude, rather than its actual relevance.
+
+
+
+
+
+
+
+
